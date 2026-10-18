@@ -33,6 +33,7 @@ function searchNow(){const q=document.getElementById('search').value.trim().toLo
 function resetView(){document.getElementById('search').value='';current='';shown=false;render()}
 function render(){renderCats();const q=document.getElementById('search').value.trim().toLowerCase();let rows=!shown?[]:data.filter(x=>mode==='search'?x.name.toLowerCase().includes(q)||x.cat.toLowerCase().includes(q)||x.ings.toLowerCase().includes(q):current==='เมนู New'?x.isNew===true:x.cat===current);document.getElementById('notice').style.display=rows.length||!shown?'block':'none';document.getElementById('notice').innerHTML=!shown?'เลือกหมวดสูตรหรือพิมพ์ค้นหา เพื่อเริ่มดูสูตร ☕':rows.length?'แตะการ์ดสูตรเพื่อดูรายละเอียด':current==='เมนู New'?'ขณะนี้ยังไม่มีสูตรที่ทำเครื่องหมายเป็นเมนู New 🆕':'ไม่พบสูตรที่ค้นหา';document.getElementById('results').style.display=shown?'block':'none';document.getElementById('count').textContent=shown?`${rows.length} เมนู`:'';document.getElementById('list').innerHTML=rows.map(x=>`<article class="recipe" onclick="openDetail(${x.id})"><div class="rtop"><div class="drink">☕</div><div><h3>${esc(x.name)}</h3><span class="badge">${esc(x.size)} • ${esc(x.cat)}</span></div></div><div class="preview">${esc(x.ings.split('\n')[0])}</div></article>`).join('')||''}
 let currentDetailId=null;
+let currentQueueEditQid=null;
 function renderDetail(id,sweet){
  const x=data.find(a=>a.id===id); if(!x)return;
  const lines=String(x.ings||'').split('\n').map(v=>v.trim()).filter(Boolean);
@@ -43,7 +44,7 @@ function renderDetail(id,sweet){
  let html=`<b>ขนาด:</b> ${esc(x.size)}<br><b>หมวด:</b> ${esc(x.cat)}`;
  if(sweets.length){
    const selected=chosen?.pct||'';
-   html+=`<div class="sweetbox"><label for="sweetSel">เลือกระดับความหวาน</label><select id="sweetSel" onchange="renderDetail(${id},this.value)">${sweets.map(v=>`<option value="${v.pct}" ${v.pct===selected?'selected':''}>ความหวาน ${v.pct}%</option>`).join('')}</select><div class="sweetresult">${esc(chosen?.text||'')}</div></div>`;
+   html+=`<div class="sweetbox"><label for="sweetSel">เลือกระดับความหวาน</label><select id="sweetSel" onchange="changeDetailSweet(${id},this.value)">${sweets.map(v=>`<option value="${v.pct}" ${v.pct===selected?'selected':''}>ความหวาน ${v.pct}%</option>`).join('')}</select><div class="sweetresult">${esc(chosen?.text||'')}</div></div>`;
  }
  if(base.length) html+=`<br><b>ส่วนผสม:</b><br>${esc(base.join('\n'))}`;
  if(x.extra) html+=`<br><br><b>วิธี/หมายเหตุ:</b> ${esc(x.extra)}`;
@@ -51,7 +52,14 @@ function renderDetail(id,sweet){
  html+=`<hr><div style="text-align:center;color:var(--muted);font-size:12px">สูตรนี้แก้ไขได้เฉพาะผู้จัดทำเว็บไซต์</div>`; if(adminLoggedIn) html+=`<div class="admin-actions"><button class="edit-btn" onclick="openEdit(${id})">✏️ แก้ไขสูตร</button><button class="logout-btn" onclick="adminLogout()">ออกจากระบบ</button></div>`;
  document.getElementById('detailBody').innerHTML=html;
 }
-function openDetail(id){currentDetailId=id;renderDetail(id);document.getElementById('detailModal').classList.add('show')}
+function changeDetailSweet(id,sweet){
+ renderDetail(id,sweet);
+ if(currentQueueEditQid){
+  const q=drinkQueue.find(x=>x.qid===currentQueueEditQid);
+  if(q){q.sweetPct=String(sweet);saveDrinkQueue();}
+ }
+}
+function openDetail(id,sweet,qid=null){currentDetailId=id;currentQueueEditQid=qid;renderDetail(id,sweet);document.getElementById('detailModal').classList.add('show')}
 function closeModal(id){document.getElementById(id).classList.remove('show')}
 
 
@@ -60,9 +68,20 @@ let drinkQueue=JSON.parse(localStorage.getItem('allCafeDrinkQueueV1')||'[]');
 if(!Array.isArray(drinkQueue)) drinkQueue=[];
 function saveDrinkQueue(){localStorage.setItem('allCafeDrinkQueueV1',JSON.stringify(drinkQueue));updateQueueCount();}
 function updateQueueCount(){const el=document.getElementById('queueCount');if(el)el.textContent=`(${drinkQueue.filter(q=>q.status==='กำลังทำ'||q.status==='รอคิว').length})`;}
-function addToQueue(id){const item=data.find(x=>Number(x.id)===Number(id));if(!item)return;const now=new Date();const hasActive=drinkQueue.some(q=>q.status==='กำลังทำ');const newItem={qid:Date.now()+Math.floor(Math.random()*1000),name:item.name,size:item.size,cat:item.cat,createdAt:now.toISOString(),status:hasActive?'รอคิว':'กำลังทำ',startedAt:hasActive?null:now.toISOString(),finishedAt:null};drinkQueue.push(newItem);saveDrinkQueue();renderQueue();closeModal('detailModal');document.getElementById('queueModal').classList.add('show');}
+function addToQueue(id){
+ const item=data.find(x=>Number(x.id)===Number(id));if(!item)return;
+ const selected=document.getElementById('sweetSel')?.value||'';
+ if(currentQueueEditQid){
+  const existing=drinkQueue.find(q=>q.qid===currentQueueEditQid);
+  if(existing){existing.sweetPct=selected;saveDrinkQueue();renderQueue();closeModal('detailModal');currentQueueEditQid=null;document.getElementById('queueModal').classList.add('show');return;}
+ }
+ const now=new Date();const hasActive=drinkQueue.some(q=>q.status==='กำลังทำ');
+ const newItem={qid:Date.now()+Math.floor(Math.random()*1000),recipeId:item.id,name:item.name,size:item.size,cat:item.cat,sweetPct:selected,createdAt:now.toISOString(),status:hasActive?'รอคิว':'กำลังทำ',startedAt:hasActive?null:now.toISOString(),finishedAt:null};
+ drinkQueue.push(newItem);saveDrinkQueue();renderQueue();closeModal('detailModal');currentQueueEditQid=null;document.getElementById('queueModal').classList.add('show');
+}
 function formatQueueTime(value){if(!value)return '—';return new Date(value).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit',second:'2-digit'});}
-function renderQueue(){const el=document.getElementById('queueBody');if(!el)return;const pending=drinkQueue.filter(q=>q.status!=='เสร็จแล้ว');const done=drinkQueue.filter(q=>q.status==='เสร็จแล้ว').slice().reverse();el.innerHTML=`${pending.length?pending.map((q,i)=>`<div class="recipe" style="cursor:default"><div class="rtop"><div class="drink">${q.status==='กำลังทำ'?'☕':`#${i+1}`}</div><div style="flex:1"><h3>${esc(q.name)}</h3><span class="badge">${esc(q.size)} • ${esc(q.status)}</span><div class="preview">รับคิวเวลา ${formatQueueTime(q.createdAt)}${q.startedAt?' • เริ่มทำ '+formatQueueTime(q.startedAt):''}</div></div></div>${q.status==='กำลังทำ'?`<button class="save" onclick="finishQueueItem(${q.qid})">✅ เสร็จแล้ว · ทำเมนูถัดไป</button>`:`<button class="save" style="background:#8b6240" onclick="startQueueItem(${q.qid})">▶️ เริ่มทำเมนูนี้</button>`}<button class="save" style="background:#f1e8de;color:var(--brown);margin-top:7px" onclick="removeQueueItem(${q.qid})">นำออกจากคิว</button></div>`).join(''):'<div class="empty">ยังไม่มีเมนูในคิว ☕<br>เลือกเมนูแล้วกด “เพิ่มเมนูนี้เข้าคิว” ได้เลย</div>'}${done.length?`<h3 style="margin-top:20px;color:var(--brown)">รายการที่เสร็จแล้ว</h3>${done.map(q=>`<div class="recipe" style="cursor:default;opacity:.8"><b>✓ ${esc(q.name)}</b><div class="preview">เพิ่มคิว ${formatQueueTime(q.createdAt)} • เสร็จ ${formatQueueTime(q.finishedAt)}</div></div>`).join('')}<button class="save" style="background:#8b6240" onclick="clearFinishedQueue()">ล้างรายการที่เสร็จแล้ว</button>`:''}`;updateQueueCount();}
+function renderQueue(){const el=document.getElementById('queueBody');if(!el)return;const pending=drinkQueue.filter(q=>q.status!=='เสร็จแล้ว');const done=drinkQueue.filter(q=>q.status==='เสร็จแล้ว').slice().reverse();el.innerHTML=`${pending.length?pending.map((q,i)=>`<div class="recipe" style="cursor:default"><div class="rtop"><div class="drink">${q.status==='กำลังทำ'?'☕':`#${i+1}`}</div><div style="flex:1"><h3>คิว ${i+1} · ${esc(q.name)}${q.sweetPct?` ${esc(q.sweetPct)}%`:``}</h3><span class="badge">${esc(q.size)} • ${esc(q.status)}${q.sweetPct?` • หวาน ${esc(q.sweetPct)}%`:``}</span><div class="preview">รับคิวเวลา ${formatQueueTime(q.createdAt)}${q.startedAt?' • เริ่มทำ '+formatQueueTime(q.startedAt):''}</div></div></div><button class="save" style="background:#f4e8da;color:var(--brown);margin-top:8px" onclick="viewQueueRecipe(${q.qid})">📖 ดูสูตร / เลือกความหวาน</button>${q.status==='กำลังทำ'?`<button class="save" onclick="finishQueueItem(${q.qid})">✅ เสร็จแล้ว · ทำเมนูถัดไป</button>`:`<button class="save" style="background:#8b6240" onclick="startQueueItem(${q.qid})">▶️ เริ่มทำเมนูนี้</button>`}<button class="save" style="background:#f1e8de;color:var(--brown);margin-top:7px" onclick="removeQueueItem(${q.qid})">นำออกจากคิว</button></div>`).join(''):'<div class="empty">ยังไม่มีเมนูในคิว ☕<br>เลือกเมนูแล้วกด “เพิ่มเมนูนี้เข้าคิว” ได้เลย</div>'}${done.length?`<h3 style="margin-top:20px;color:var(--brown)">รายการที่เสร็จแล้ว</h3>${done.map(q=>`<div class="recipe" style="cursor:default;opacity:.8"><b>✓ ${esc(q.name)}</b><div class="preview">เพิ่มคิว ${formatQueueTime(q.createdAt)} • เสร็จ ${formatQueueTime(q.finishedAt)}</div></div>`).join('')}<button class="save" style="background:#8b6240" onclick="clearFinishedQueue()">ล้างรายการที่เสร็จแล้ว</button>`:''}`;updateQueueCount();}
+function viewQueueRecipe(qid){const q=drinkQueue.find(x=>x.qid===qid);if(!q)return;let item=q.recipeId?data.find(x=>Number(x.id)===Number(q.recipeId)):null;if(!item)item=data.find(x=>x.name===q.name&&x.size===q.size);if(!item){alert('ไม่พบสูตรของเมนูนี้ในรายการสูตรแล้วครับ');return}closeModal('queueModal');openDetail(item.id,q.sweetPct||undefined,qid);const btn=document.querySelector('#detailBody .save');if(btn)btn.textContent='💾 บันทึกความหวานในคิว';}
 function openQueue(){renderQueue();document.getElementById('queueModal').classList.add('show');}
 function startQueueItem(qid){const q=drinkQueue.find(x=>x.qid===qid);if(!q)return;drinkQueue.forEach(x=>{if(x.status==='กำลังทำ')x.status='รอคิว';});q.status='กำลังทำ';q.startedAt=q.startedAt||new Date().toISOString();saveDrinkQueue();renderQueue();}
 function finishQueueItem(qid){const q=drinkQueue.find(x=>x.qid===qid);if(!q)return;q.status='เสร็จแล้ว';q.finishedAt=new Date().toISOString();const next=drinkQueue.find(x=>x.status==='รอคิว');if(next){next.status='กำลังทำ';next.startedAt=new Date().toISOString();}saveDrinkQueue();renderQueue();}
