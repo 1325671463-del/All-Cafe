@@ -47,6 +47,7 @@ function renderDetail(id,sweet){
  }
  if(base.length) html+=`<br><b>ส่วนผสม:</b><br>${esc(base.join('\n'))}`;
  if(x.extra) html+=`<br><br><b>วิธี/หมายเหตุ:</b> ${esc(x.extra)}`;
+ html+=`<button class="save" style="margin-top:16px;width:100%" onclick="addToQueue(${id})">➕ เพิ่มเมนูนี้เข้าคิว</button>`;
  html+=`<hr><div style="text-align:center;color:var(--muted);font-size:12px">สูตรนี้แก้ไขได้เฉพาะผู้จัดทำเว็บไซต์</div>`; if(adminLoggedIn) html+=`<div class="admin-actions"><button class="edit-btn" onclick="openEdit(${id})">✏️ แก้ไขสูตร</button><button class="logout-btn" onclick="adminLogout()">ออกจากระบบ</button></div>`;
  document.getElementById('detailBody').innerHTML=html;
 }
